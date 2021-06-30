@@ -15,40 +15,43 @@ import (
 */
 
 type User struct {
-	id string
+	id   string
 	name string
-	msg chan string
-
+	msg  chan string
 }
+
 var AllUser = make(map[string]User)
 
 var message = make(chan string)
 
-func broadcast()  {
+func broadcast() {
 	/*
-	向全部用户广播, 全局唯一go程
-	 */
+		向全部用户广播, 全局唯一go程
+	*/
 	fmt.Println("broadCast server go rounte start suss")
 	for {
 		info := <-message
-		fmt.Println("broadcast info",info)
+		fmt.Println("broadcast info", info)
 
-		for _,user := range AllUser{
+		for _, user := range AllUser {
 			user.msg <- info
 		}
 	}
 }
 
-
-func handle(conn net.Conn)  {
+func handle(conn net.Conn) {
 	fmt.Println("start handle success")
 	ClientInfo := conn.RemoteAddr().String()
 	// fmt.Println(ClientInfo)
 	newUser := User{
 		id:   ClientInfo,
 		name: ClientInfo,
-		msg:  make(chan string),
+		msg:  make(chan string, 10),
 	}
+	defer func() {
+		fmt.Println("用户" + newUser.name + "下线")
+		delete(AllUser, ClientInfo)
+	}()
 	go func() {
 		// 向AllUser 中添加 key
 		AllUser[newUser.id] = newUser
@@ -57,25 +60,25 @@ func handle(conn net.Conn)  {
 		sprintf := fmt.Sprintf("%s:%s ====> ONLINE\r\n", newUser.name, newUser.id)
 		message <- sprintf
 
-		messageInfo := <- newUser.msg
-		fmt.Println("messageInfo:",messageInfo)
+		messageInfo := <-newUser.msg
+		fmt.Println("messageInfo:", messageInfo)
 		conn.Write([]byte(messageInfo))
 	}()
 
 	// 读取客户端数据
-	for{
+	for {
 		buf := make([]byte, 1024)
 		read, err := conn.Read(buf)
 		// fmt.Println("read:",read)
 		if err != nil {
-			fmt.Println("connect.Read err",err)
+			fmt.Println("connect.Read err", err)
 			return
 		}
 
 		// 用来查看自动发送的内容
 		//fmt.Println("read content is" ,int(buf[0]))
 		//fmt.Println("read content is" ,int(buf[1]))
-		go func () {
+		go func() {
 			if int(buf[0]) != 255 {
 				if int(buf[0]) != 13 {
 					if string(buf[:6]) == "rename" {
@@ -91,13 +94,13 @@ func handle(conn net.Conn)  {
 		}()
 		go func() {
 			//speak_name := <- newUser.msg
-			messageInfo := <- newUser.msg
-			sp := fmt.Sprint(messageInfo+"\r\n")
+			messageInfo := <-newUser.msg
+			sp := fmt.Sprint(messageInfo + "\r\n")
 			_, err2 := conn.Write([]byte(sp))
 			if err2 != nil {
-				fmt.Println("write data to client err",err2)
+				fmt.Println("write data to client err", err2)
 			}
-			fmt.Println("client messageInfo",messageInfo)
+			fmt.Println("client messageInfo", messageInfo)
 		}()
 
 	}
@@ -107,7 +110,7 @@ func main() {
 	// 创建服务
 	listen, err := net.Listen("tcp", ":8011")
 	if err != nil {
-		fmt.Println("listen err:",err)
+		fmt.Println("listen err:", err)
 		return
 	}
 	fmt.Println("server start success")
@@ -129,6 +132,5 @@ func main() {
 		go handle(conn)
 		time.Sleep(500)
 	}
-
 
 }
