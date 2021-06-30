@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"time"
 )
 
 /*
@@ -23,14 +24,18 @@ var AllUser = make(map[string]User)
 
 var message = make(chan string)
 
-func broadcase()  {
+func broadcast()  {
 	/*
 	向全部用户广播, 全局唯一go程
 	 */
-	info := <-message
-	fmt.Println("broadCast go rounte start suss")
-	for _,user := range AllUser{
-		user.msg <- info
+	fmt.Println("broadCast server go rounte start suss")
+	for {
+		info := <-message
+		fmt.Println("broadcast info",info)
+
+		for _,user := range AllUser{
+			user.msg <- info
+		}
 	}
 }
 
@@ -38,26 +43,62 @@ func broadcase()  {
 func handle(conn net.Conn)  {
 	fmt.Println("start handle success")
 	ClientInfo := conn.RemoteAddr().String()
+	// fmt.Println(ClientInfo)
 	newUser := User{
 		id:   ClientInfo,
 		name: ClientInfo,
 		msg:  make(chan string),
 	}
 	go func() {
+		// 向AllUser 中添加 key
+		AllUser[newUser.id] = newUser
+		fmt.Println(AllUser)
+		// 讲登录数据同步到服务器
+		sprintf := fmt.Sprintf("%s:%s ====> ONLINE\r\n", newUser.name, newUser.id)
+		message <- sprintf
+
 		messageInfo := <- newUser.msg
-		fmt.Println(messageInfo)
+		fmt.Println("messageInfo:",messageInfo)
+		conn.Write([]byte(messageInfo))
 	}()
-	AllUser[newUser.id] = newUser
-	sprintf := fmt.Sprintf("%s:%s ====> ONLINE", newUser.name, newUser.id)
-	message <- sprintf
+
+	// 读取客户端数据
 	for{
 		buf := make([]byte, 1024)
 		read, err := conn.Read(buf)
+		// fmt.Println("read:",read)
 		if err != nil {
 			fmt.Println("connect.Read err",err)
 			return
 		}
-		fmt.Println("read content is " ,string(buf[:read]))
+
+		// 用来查看自动发送的内容
+		//fmt.Println("read content is" ,int(buf[0]))
+		//fmt.Println("read content is" ,int(buf[1]))
+		go func () {
+			if int(buf[0]) != 255 {
+				if int(buf[0]) != 13 {
+					if string(buf[:6]) == "rename" {
+						newUser.name = string(buf[7:read])
+					} else {
+						// message <- newUser.name
+						messageToClient := fmt.Sprint(newUser.name + ":" + string(buf[:read]))
+						fmt.Println("messageToClient:", messageToClient)
+						message <- messageToClient
+					}
+				}
+			}
+		}()
+		go func() {
+			//speak_name := <- newUser.msg
+			messageInfo := <- newUser.msg
+			sp := fmt.Sprint(messageInfo+"\r\n")
+			_, err2 := conn.Write([]byte(sp))
+			if err2 != nil {
+				fmt.Println("write data to client err",err2)
+			}
+			fmt.Println("client messageInfo",messageInfo)
+		}()
 
 	}
 }
@@ -72,7 +113,7 @@ func main() {
 	fmt.Println("server start success")
 
 	//启动全局唯一go程,监听message通道,写给所有用户
-	go broadcase()
+	go broadcast()
 
 	defer listen.Close()
 	for {
@@ -86,6 +127,7 @@ func main() {
 
 		// 启动处理业务go程
 		go handle(conn)
+		time.Sleep(500)
 	}
 
 
