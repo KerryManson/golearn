@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = ".;pb";
+
+message Teacher  {
+  int32 age = 1;
+  string name = 2;
+}
+
+service SayName{
+  rpc SayHello(Teacher) returns(Teacher);
+}
